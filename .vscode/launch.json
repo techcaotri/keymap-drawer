@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [ 
+    {
+      "type": "python",
+      "request": "launch",
+      "name": "MyLaunch",
+      "module": "keymap_drawer",
+      "cwd": "/home/tripham/Dev/Kinesis_Adv360_Pro/Sources/from-urob-zmk-config/keymap_img",
+      "args": ["-c", "adv360pro_keymap_config.yaml", "parse", "-z", "../config/adv360pro.keymap"]
+    }
+  ]
+}

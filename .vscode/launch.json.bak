@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "python",
+      "request": "launch",
+      "name": "Launch",
+      "program": "${input:myPrompt}"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "myPrompt",
+      "type": "promptString",
+      "description": "Program to run: ",
+      "default": "foobar"
+    }
+  ]
+}
