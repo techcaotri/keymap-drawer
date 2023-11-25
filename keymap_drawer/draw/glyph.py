@@ -2,27 +2,27 @@
 Module containing class and methods to help with fetching
 and drawing SVG glyphs.
 """
+
 import re
-from pathlib import Path
-from functools import lru_cache, partial
-from urllib.request import urlopen
-from urllib.error import HTTPError
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache, partial
+from pathlib import Path
 from typing import Iterable
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
 from platformdirs import user_cache_dir
 
-from .keymap import KeymapData, LayoutKey
-from .config import DrawConfig
-
+from keymap_drawer.config import DrawConfig
+from keymap_drawer.keymap import KeymapData, LayoutKey
 
 FETCH_WORKERS = 8
 FETCH_TIMEOUT = 10
 CACHE_GLYPHS_PATH = Path(user_cache_dir("keymap-drawer", False)) / "glyphs"
 
 
-class GlyphHandler:
-    """Class that handles SVG glyphs."""
+class GlyphMixin:
+    """Mixin that handles SVG glyphs for KeymapDrawer."""
 
     _glyph_name_re = re.compile(r"\$\$(?P<glyph>.*)\$\$")
     _view_box_dimensions_re = re.compile(
@@ -31,38 +31,39 @@ class GlyphHandler:
     )
     _scrub_dims_re = re.compile(r' (width|height)=".*?"')
 
-    def __init__(self, config: DrawConfig, keymap: KeymapData) -> None:
-        self.cfg = config
-        self.name_to_svg = self._get_all_glyphs(keymap)
+    # initialized in KeymapDrawer
+    cfg: DrawConfig
+    keymap: KeymapData
 
-    def _get_all_glyphs(self, keymap: KeymapData) -> dict[str, str]:
+    def init_glyphs(self) -> None:
+        """Preprocess all glyphs in the keymap to get their name to SVG mapping."""
+
         def find_key_glyph_names(key: LayoutKey) -> set[str]:
             return {glyph for field in (key.tap, key.hold, key.shifted) if (glyph := self._legend_to_name(field))}
 
         # find all named glyphs in the keymap
         names = set()
-        for layer in keymap.layers.values():
+        for layer in self.keymap.layers.values():
             for key in layer:
                 names |= find_key_glyph_names(key)
-        for combo in keymap.combos:
+        for combo in self.keymap.combos:
             names |= find_key_glyph_names(combo.key)
 
         # get the ones defined in draw_config.glyphs
-        svgs = {name: glyph for name in names if (glyph := self.cfg.glyphs.get(name))}
-        rest = names - set(svgs)
+        self.name_to_svg = {name: glyph for name in names if (glyph := self.cfg.glyphs.get(name))}
+        rest = names - set(self.name_to_svg)
 
         # try to fetch the rest using draw_config.glyph_urls
         if rest:
-            svgs |= self._fetch_glyphs(rest)
-        if rest := rest - set(svgs):
+            self.name_to_svg |= self._fetch_glyphs(rest)
+        if rest := rest - set(self.name_to_svg):
             raise ValueError(
                 f'Glyphs "{rest}" are not defined in draw_config.glyphs or fetchable using draw_config.glyph_urls'
             )
 
-        for name, svg in svgs.items():
+        for name, svg in self.name_to_svg.items():
             if not self._view_box_dimensions_re.match(svg):
                 raise ValueError(f'Glyph definition for "{name}" does not have the required "viewbox" property')
-        return svgs
 
     def _fetch_glyphs(self, names: Iterable[str]) -> dict[str, str]:
         names = list(names)
@@ -97,7 +98,7 @@ class GlyphHandler:
             return ""
 
         defs = "<defs>/* start glyphs */\n"
-        for name, svg in self.name_to_svg.items():
+        for name, svg in sorted(self.name_to_svg.items()):
             defs += f'<svg id="{name}">\n'
             defs += self._scrub_dims_re.sub("", svg)
             defs += "\n</svg>\n"

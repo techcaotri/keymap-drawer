@@ -2,15 +2,15 @@
 Module with classes that define the keymap representation, with multiple layers
 containing key and combo specifications, paired with the physical keyboard layout.
 """
-from itertools import chain
-from functools import partial
 from collections import defaultdict
-from typing import Literal, Sequence, Mapping, Iterable
+from functools import partial
+from itertools import chain
+from typing import Iterable, Literal, Mapping, Sequence
 
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, root_validator, validator
 
-from .physical_layout import layout_factory, PhysicalLayout
 from .config import DrawConfig
+from .physical_layout import PhysicalLayout, layout_factory
 
 
 class LayoutKey(BaseModel, allow_population_by_field_name=True):
@@ -59,7 +59,10 @@ class ComboSpec(BaseModel, allow_population_by_field_name=True):
     dendron: bool | None = Field(alias="d", default=None)
     slide: float | None = Field(alias="s", default=None)
     arc_scale: float = 1.0
-    type: str = "combo"
+    type: str = ""
+    width: float | None = Field(alias="w", default=None)
+    height: float | None = Field(alias="h", default=None)
+    rotation: float = Field(alias="r", default=0.0)
 
     @classmethod
     def normalize_fields(cls, spec_dict: dict) -> dict:

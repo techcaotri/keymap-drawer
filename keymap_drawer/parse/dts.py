@@ -7,13 +7,14 @@ The implementation is based on a nested expression parser for curly braces
 through pyparsing with some additions on top to clean up comments and run the
 C preprocessor using pcpp.
 """
+
 import re
-from itertools import chain
-from io import StringIO
 from collections import defaultdict
+from io import StringIO
+from itertools import chain
 
 import pyparsing as pp
-from pcpp.preprocessor import Preprocessor, OutputDirective, Action  # type: ignore
+from pcpp.preprocessor import Action, OutputDirective, Preprocessor  # type: ignore
 
 
 class DTNode:
@@ -88,15 +89,21 @@ class DeviceTree:
     _compatible_re = re.compile(r'compatible = "(.*?)"')
     _custom_data_header = "__keymap_drawer_data__"
 
-    def __init__(self, in_str: str, file_name: str | None = None, preprocess: bool = True):
+    def __init__(
+        self, in_str: str, file_name: str | None = None, preprocess: bool = True, add_define: str | None = None
+    ):
         """
         Given an input DTS string `in_str` and `file_name` it is read from, parse it into an internap
         tree representation and track what "compatible" value each node has.
+
+        If `add_define` is set to a string, #define it for the preprocessor.
         """
         self.raw_buffer = in_str
         self.file_name = file_name
+        if add_define:
+            self.raw_buffer = f"#define {add_define}\n" + self.raw_buffer
 
-        prepped = self._preprocess(in_str, file_name) if preprocess else in_str
+        prepped = self._preprocess(self.raw_buffer, file_name) if preprocess else in_str
 
         # make sure node labels and names are glued together and comments are removed,
         # then parse with nested curly braces

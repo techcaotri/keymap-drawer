@@ -3,7 +3,7 @@ name: Run lint checks
 on:
   push:
     paths:
-      - keymap_drawer
+      - 'keymap_drawer/**'
       - pyproject.toml
       - poetry.lock
   pull_request:
@@ -50,5 +50,5 @@ jobs:
         if: success() || failure()
 
       - name: Deptry
-        run: poetry run deptry keymap_drawer
+        run: poetry run deptry .
         if: success() || failure()

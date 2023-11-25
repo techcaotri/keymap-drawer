@@ -13,6 +13,7 @@ Available as a [command-line tool](#command-line-tool-installation) or a [web ap
 - Draw keymap representations consisting of multiple layers, hold-tap keys and combos
   - Uses a human-editable YAML format for specifying the keymap
   - Non-adjacent or 3+ key combos can be visualized by specifying its positioning relative to the keys, with automatically drawn dendrons to keys
+  - Alternatively, output a separate diagram per combo if you have tricky key position combinations
 - Bootstrap the YAML representation by automatically parsing QMK or ZMK keymap files
 - Arbitrary physical keyboard layouts (with rotated keys!) supported, along with parametrized ortho layouts
 - Both parsing and drawing are customizable with a config file, see ["Customization" section](#customization)
@@ -196,6 +197,8 @@ on:
 jobs:
   draw:
     uses: caksoylar/keymap-drawer/.github/workflows/draw-zmk.yml@main
+    permissions:
+      contents: write  # allow workflow to commit to the repo
     with:
       keymap_patterns: "config/*.keymap"        # path to the keymaps to parse
       config_path: "keymap_drawer.config.yaml"  # config file, ignored if not exists
@@ -206,7 +209,7 @@ jobs:
 
 ### Modifying the workflow-generated commit
 
-The workflow will add the generated SVG and keymap representation YAML files to the `output-folder`, and generate a new `"keymap-drawer render"` commit by default. You can modify this commit message with the `commit_message` input param, e.g.:
+The workflow will add the generated SVG and keymap representation YAML files to the `output_folder`, and generate a new commit with commit message "keymap-drawer render" by default. You can modify this commit message with the `commit_message` input param, e.g.:
 
 ```yaml
 jobs:

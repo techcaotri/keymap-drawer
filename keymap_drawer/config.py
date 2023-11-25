@@ -4,11 +4,25 @@ keycode converters for parsing.
 """
 
 from textwrap import dedent
-from pydantic import BaseSettings
+
+from pydantic import BaseModel, BaseSettings
 
 
 class DrawConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
     """Configuration related to SVG drawing, including key sizes, padding amounts, combo drawing settings etc."""
+
+    class KeySidePars(BaseModel):
+        """Parameters of key side drawing for `draw_key_sides` config."""
+
+        # position of internal key rectangle relative to the center of the key
+        rel_x: float = 0
+        rel_y: float = 4
+        # delta dimension between extenal key rectangle and internal key rectangle
+        rel_w: float = 12
+        rel_h: float = 12
+        # curvature of rounded internal key rectangle
+        rx: float = 4
+        ry: float = 4
 
     # key dimensions, non-ortho layouts use key_h for width as well
     key_w: float = 60
@@ -24,6 +38,15 @@ class DrawConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
     # curvature of rounded key rectangles
     key_rx: float = 6
     key_ry: float = 6
+
+    # number of columns in the output drawing
+    n_columns: int = 1
+
+    # draw separate combo diagrams instead of drawing them on layers
+    separate_combo_diagrams: bool = False
+
+    # if drawing separate combo diagrams, shrink physical layout by this factor
+    combo_diagrams_scale: int = 2
 
     # padding between keys
     inner_pad_w: float = 2
@@ -45,12 +68,25 @@ class DrawConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
     # padding from edge of cap to top and bottom legends
     small_pad: float = 2.0
 
+    # position of center ("tap") key legend relative to the center of the key
+    legend_rel_x: float = 0
+    legend_rel_y: float = 0
+
+    # draw key sides
+    draw_key_sides: bool = False
+
+    # key side parameters
+    key_side_pars: KeySidePars = KeySidePars()
+
+    # style CSS to be output in the SVG
+    # if you do not need to remove existing definitions, consider using svg_extra_style instead
     svg_style: str = dedent(
         """\
-        /* inherit to force styles through use tags*/
+        /* inherit to force styles through use tags */
         svg path {
             fill: inherit;
         }
+
         /* font and background color specifications */
         svg.keymap {
             font-family: SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace;
@@ -67,8 +103,13 @@ class DrawConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
             stroke-width: 1;
         }
 
+        /* default key side styling, only used is draw_key_sides is set */
+        rect.side {
+            filter: brightness(90%);
+        }
+
         /* color accent for combo boxes */
-        rect.combo {
+        rect.combo, rect.combo-separate {
             fill: #cdf;
         }
 
@@ -134,14 +175,19 @@ class DrawConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
         .icon-tabler > path {
             fill: inherit;
             stroke: inherit;
+            stroke-width: 2;
         }
         /* hide tabler's default box */
         .icon-tabler > path[stroke="none"][fill="none"] {
-            visibility: collapse;
+            visibility: hidden;
         }
         /* End Tabler Icons Cleanup */
         """
     )
+
+    # extra CSS to be appended to svg_style
+    # prefer to set this over modifying svg_style since the default value of svg_style can change
+    svg_extra_style: str = ""
 
     # shrink font size for legends wider than this many chars, set to 0 to disable
     # ideal value depends on the font size defined in svg_style and width of the boxes
@@ -184,6 +230,9 @@ class ParseConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
     # display text to place in hold field for sticky/one-shot keys
     sticky_label: str = "sticky"
 
+    # display text to place in hold field for toggled keys
+    toggle_label: str = "toggle"
+
     # legend to output for transparent keys
     trans_legend: str | dict = {"t": "▽", "type": "trans"}
 
@@ -193,7 +242,11 @@ class ParseConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
     # layer is active (which is the default behavior) or *any* of them (with this option)
     mark_alternate_layer_activators: bool = False
 
-    # convert QMK keycodes to their display forms, omitting "KC_" prefix on the keys
+    # remove these prefixes from QMK keycodes before further processing
+    # can be augmented with other locale prefixes, e.g. "DE_"
+    qmk_remove_keycode_prefix: list[str] = ["KC_"]
+
+    # convert QMK keycodes to their display forms, after removing prefixes in `qmk_remove_keycode_prefix`
     qmk_keycode_map: dict[str, str | dict] = {
         # QMK keycodes
         "XXXXXXX": "",
@@ -264,6 +317,10 @@ class ParseConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
         "QUES": "?",
     }
 
+    # remove these prefixes from ZMK keycodes before further processing
+    # can be augmented with locale prefixes for zmk-locale-generator headers, e.g. "DE_"
+    zmk_remove_keycode_prefix: list[str] = []
+
     # convert ZMK keycodes to their display forms, applied to parameters of behaviors like "&kp"
     zmk_keycode_map: dict[str, str | dict] = {
         "EXCLAMATION": "!",
@@ -306,8 +363,8 @@ class ParseConfig(BaseSettings, env_prefix="KEYMAP_", extra="ignore"):
         "COLON": ":",
         "SINGLE_QUOTE": "'",
         "SQT": "'",
-        "APOSTROPHE": "<",
-        "APOS": ".",
+        "APOSTROPHE": "'",
+        "APOS": "'",
         "DOUBLE_QUOTES": '"',
         "DQT": '"',
         "COMMA": ",",

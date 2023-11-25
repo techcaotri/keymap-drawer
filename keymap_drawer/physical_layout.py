@@ -3,20 +3,20 @@ Module containing classes pertaining to the physical layout of a keyboard,
 i.e. a sequence of keys each represented by its coordinates, dimensions
 and rotation.
 """
-import json
-from math import sqrt, sin, cos, pi
-from dataclasses import dataclass
-from pathlib import Path
-from functools import cached_property, lru_cache
-from typing import Sequence, Literal
-from urllib.request import urlopen
-from urllib.error import HTTPError
 
-from pydantic import BaseModel, root_validator
+import json
+from dataclasses import dataclass
+from functools import cached_property, lru_cache
+from math import cos, pi, sin, sqrt
+from pathlib import Path
+from typing import Literal, Sequence
+from urllib.error import HTTPError
+from urllib.request import urlopen
+
 from platformdirs import user_cache_dir
+from pydantic import BaseModel, root_validator
 
 from .config import DrawConfig
-
 
 QMK_LAYOUTS_PATH = Path(__file__).parent.parent / "resources" / "qmk_layouts"
 QMK_METADATA_URL = "https://keyboards.qmk.fm/v1/keyboards/{keyboard}/info.json"
@@ -39,8 +39,11 @@ class Point:
     def __abs__(self) -> float:
         return sqrt(self.x**2 + self.y**2)
 
-    def __rmul__(self, other: int | float) -> "Point":
+    def __mul__(self, other: int | float) -> "Point":
         return Point(other * self.x, other * self.y)
+
+    def __rmul__(self, other: int | float) -> "Point":
+        return self.__mul__(other)
 
     def copy(self) -> "Point":  # pylint: disable=missing-function-docstring
         return Point(self.x, self.y)
@@ -50,25 +53,34 @@ class Point:
 class PhysicalKey:
     """
     Represents a physical key, in terms of its center coordinates, width, height and
-    rotation angle. Accepts a rotation_pos field to specify the origin to rotate around
-    and uses it to re-adjust center position during construction; afterwards rotation
-    center is equal to key center.
+    rotation angle.
     """
 
     pos: Point
     width: float
     height: float
     rotation: float = 0  # CW if positive
-    rotation_pos: Point | None = None  # pos (key center) by default
     bounding_width: float = 0.0
     bounding_height: float = 0.0
 
+    @classmethod
+    def from_qmk_spec(  # pylint: disable=too-many-arguments
+        cls, scale: float, pos: Point, width: float, height: float, rotation: float, rotation_pos: Point
+    ) -> "PhysicalKey":
+        """
+        Create a PhysicalKey from QMK-format key definition. `pos` is the top left corner coordinates,
+        `rotation_pos` is the coordinates around which the rectangle is rotated. `scale` maps from `1u` dimensions
+        to pixel dimensions.
+        During construction of PhysicalKey, uses `rotation_pos` to re-adjust center position.
+        """
+        center = pos + Point(width / 2, height / 2)
+        if rotation:
+            center = cls._rotate_point(rotation_pos, center, rotation)
+
+        return cls(scale * center, scale * width, scale * height, rotation)
+
     def __post_init__(self) -> None:
         if self.rotation:
-            # recalculate key center after rotation
-            if self.rotation_pos is not None:
-                self.pos = self._rotate_point(self.rotation_pos, self.pos, self.rotation)
-
             # calculate bounding box dimensions
             rotated_corners = [
                 self._rotate_point(Point(0, 0), p, self.rotation)
@@ -89,6 +101,30 @@ class PhysicalKey:
             delta.x * sin(angle) + delta.y * cos(angle),
         )
         return origin + rotated
+
+    def __add__(self, other: "Point") -> "PhysicalKey":
+        return PhysicalKey(
+            pos=self.pos + other,
+            width=self.width,
+            height=self.height,
+            rotation=self.rotation,
+        )
+
+    def __sub__(self, other: "Point") -> "PhysicalKey":
+        return PhysicalKey(
+            pos=self.pos - other,
+            width=self.width,
+            height=self.height,
+            rotation=self.rotation,
+        )
+
+    def __rmul__(self, other: int | float) -> "PhysicalKey":
+        return PhysicalKey(
+            pos=self.pos * other,
+            width=self.width * other,
+            height=self.height * other,
+            rotation=self.rotation,
+        )
 
 
 class PhysicalLayout(BaseModel, keep_untouched=(cached_property,)):
@@ -118,6 +154,12 @@ class PhysicalLayout(BaseModel, keep_untouched=(cached_property,)):
     def min_height(self) -> float:
         """Return minimum key height in the layout."""
         return min(k.height for k in self.keys)
+
+    def __add__(self, other: Point) -> "PhysicalLayout":
+        return PhysicalLayout(keys=[k + other for k in self.keys])
+
+    def __rmul__(self, other: int | float) -> "PhysicalLayout":
+        return PhysicalLayout(keys=[other * k for k in self.keys])
 
 
 def layout_factory(
@@ -269,7 +311,7 @@ class QmkLayout(BaseModel):
         y: float
         w: float = 1.0
         h: float = 1.0
-        r: float = 0  # assume CW rotation around key center, after translation to x, y
+        r: float = 0  # assume CW rotation around rx, ry (defaults to x, y), after translation to x, y
         rx: float | None = None
         ry: float | None = None
 
@@ -277,15 +319,15 @@ class QmkLayout(BaseModel):
 
     def generate(self, key_size: float) -> Sequence[PhysicalKey]:
         """Generate a sequence of PhysicalKeys from QmkKeys."""
-        x_min = min(k.x for k in self.layout)
-        y_min = min(k.y for k in self.layout)
+        min_pt = Point(min(k.x for k in self.layout), min(k.y for k in self.layout))
         return [
-            PhysicalKey(
-                pos=key_size * Point(k.x - x_min + k.w / 2, k.y - y_min + k.h / 2),
-                width=key_size * k.w,
-                height=key_size * k.h,
+            PhysicalKey.from_qmk_spec(
+                scale=key_size,
+                pos=Point(k.x, k.y) - min_pt,
+                width=k.w,
+                height=k.h,
                 rotation=k.r,
-                rotation_pos=None if k.rx is None or k.ry is None else key_size * Point(k.rx - x_min, k.ry - y_min),
+                rotation_pos=Point(k.x if k.rx is None else k.rx, k.y if k.ry is None else k.ry) - min_pt,
             )
             for k in self.layout
         ]
